@@ -1,0 +1,971 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>MQTT 设备控制台</title>
+<style>
+  :root {
+    --bg: #0f1420;
+    --panel: #161d2c;
+    --panel-2: #1d2638;
+    --line: #2a3550;
+    --txt: #e8eefc;
+    --dim: #8fa0c0;
+    --accent: #3b82f6;
+    --ok: #22c55e;
+    --bad: #ef4444;
+    --warn: #f59e0b;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    min-height: 100vh;
+    background: radial-gradient(1200px 600px at 50% -10%, #1b2740 0%, var(--bg) 60%);
+    color: var(--txt);
+    font-family: "Segoe UI", "Microsoft YaHei", system-ui, -apple-system, sans-serif;
+    padding: 20px;
+  }
+  .wrap { max-width: 1080px; margin: 0 auto; display: flex; flex-direction: column; gap: 16px; }
+
+  .card {
+    background: linear-gradient(180deg, var(--panel-2), var(--panel));
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    padding: 16px 18px;
+    box-shadow: 0 6px 24px rgba(0, 0, 0, .35);
+  }
+
+  h1 { font-size: 18px; margin: 0 0 12px; font-weight: 600; letter-spacing: .5px; }
+  h1 small { color: var(--dim); font-weight: 400; font-size: 12px; margin-left: 8px; }
+
+  /* ---------- 连接栏 ---------- */
+  .conn-row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+  input[type="text"], input[type="password"], input[type="number"] {
+    padding: 11px 14px;
+    border-radius: 10px;
+    border: 1px solid var(--line);
+    background: #0c121d;
+    color: var(--txt);
+    font-size: 14px;
+    outline: none;
+    font-family: inherit;
+    transition: border-color .15s, box-shadow .15s;
+  }
+  input[type="text"]:focus, input[type="password"]:focus {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px rgba(59,130,246,.18);
+  }
+  input:disabled { opacity: .55; }
+  #serverUrl { flex: 1 1 300px; min-width: 200px; }
+
+  button {
+    font-family: inherit;
+    font-size: 14px;
+    padding: 11px 20px;
+    border-radius: 10px;
+    border: 1px solid transparent;
+    cursor: pointer;
+    color: #fff;
+    background: var(--accent);
+    transition: filter .15s, transform .05s;
+    white-space: nowrap;
+  }
+  button:hover:not(:disabled) { filter: brightness(1.12); }
+  button:active:not(:disabled) { transform: translateY(1px); }
+  button:disabled { opacity: .45; cursor: not-allowed; }
+  button.danger { background: var(--bad); }
+  button.ghost { background: transparent; border-color: var(--line); color: var(--dim); }
+  button.ghost:hover:not(:disabled) { color: #cfe0ff; border-color: var(--accent); }
+  button.sm { padding: 6px 12px; font-size: 12px; }
+
+  .status { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--dim); }
+  .dot { width: 10px; height: 10px; border-radius: 50%; background: #4b5563; box-shadow: 0 0 0 3px rgba(75,85,99,.18); }
+  .dot.on  { background: var(--ok);   box-shadow: 0 0 0 3px rgba(34,197,94,.18); animation: pulse 1.6s infinite; }
+  .dot.err { background: var(--bad);  box-shadow: 0 0 0 3px rgba(239,68,68,.18); }
+  .dot.wait{ background: var(--warn); box-shadow: 0 0 0 3px rgba(245,158,11,.18); animation: pulse 1.2s infinite; }
+  @keyframes pulse { 50% { opacity: .4; } }
+
+  /* ---------- 主题设置 ---------- */
+  details.settings { margin-top: 14px; border-top: 1px solid var(--line); padding-top: 14px; }
+  details.settings summary {
+    cursor: pointer; font-size: 13px; color: #c9d6ee; user-select: none;
+    list-style: none; display: flex; align-items: center; gap: 8px;
+  }
+  details.settings summary::-webkit-details-marker { display: none; }
+  details.settings summary::before { content: "▸"; color: var(--dim); transition: transform .15s; }
+  details.settings[open] summary::before { transform: rotate(90deg); }
+  .grid4 { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px 16px; margin-top: 14px; }
+  @media (max-width: 700px) { .grid4 { grid-template-columns: 1fr; } }
+  .fld label { display: block; font-size: 12px; color: var(--dim); margin-bottom: 6px; letter-spacing: .3px; }
+  .fld input, .fld select { width: 100%; }
+  .fld select {
+    padding: 11px 12px; border-radius: 10px; border: 1px solid var(--line);
+    background: #0c121d; color: var(--txt); font-size: 14px; outline: none; font-family: inherit;
+  }
+  .fld .note { font-size: 11px; color: #6f7f9c; margin-top: 5px; }
+
+  .subline { display: flex; gap: 18px; flex-wrap: wrap; margin-top: 12px; font-size: 12px; color: var(--dim); }
+  .subline b { color: #c9d6ee; font-weight: 500; }
+  .subline b.miss { color: var(--warn); }
+
+  /* ---------- 设备网格 ---------- */
+  .grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; }
+  @media (max-width: 860px) { .grid { grid-template-columns: repeat(2, 1fr); } }
+  @media (max-width: 460px) { .grid { grid-template-columns: 1fr; } }
+
+  .dev { display: flex; flex-direction: column; gap: 12px; align-items: stretch; }
+  .dev-title { font-size: 14px; font-weight: 600; display: flex; justify-content: space-between; align-items: center; }
+  .dev-title span.state { font-size: 12px; font-weight: 400; color: var(--dim); }
+  .dev-title span.state.on { color: var(--ok); }
+
+  .pic {
+    height: 150px;
+    border-radius: 12px;
+    background: #0b101a;
+    border: 1px solid var(--line);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+    position: relative;
+  }
+  .pic img { max-width: 100%; max-height: 100%; object-fit: contain; transition: opacity .2s, filter .25s; }
+  .pic.off-img img { filter: grayscale(1) brightness(.55); }
+  .pic.on-glow::after {
+    content: "";
+    position: absolute; inset: 0;
+    border-radius: 12px;
+    pointer-events: none;
+    box-shadow: inset 0 0 40px 6px var(--glow, rgba(255,255,255,.25));
+  }
+
+  .switch { position: relative; display: inline-block; width: 56px; height: 30px; flex: none; }
+  .switch input { opacity: 0; width: 0; height: 0; }
+  .slider {
+    position: absolute; cursor: pointer; inset: 0;
+    background: #33415c; border-radius: 30px;
+    transition: background .2s;
+  }
+  .slider::before {
+    content: ""; position: absolute;
+    height: 24px; width: 24px; left: 3px; top: 3px;
+    background: #fff; border-radius: 50%;
+    transition: transform .2s;
+    box-shadow: 0 1px 4px rgba(0,0,0,.4);
+  }
+  .switch input:checked + .slider { background: var(--ok); }
+  .switch input:checked + .slider::before { transform: translateX(26px); }
+  .switch input:disabled + .slider { opacity: .4; cursor: not-allowed; }
+
+  .sw-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+
+  /* ---------- 电机面板 ---------- */
+  .motor { display: grid; grid-template-columns: 220px 1fr; gap: 20px; align-items: center; }
+  @media (max-width: 700px) { .motor { grid-template-columns: 1fr; } }
+
+  .motor-pic {
+    height: 180px; border-radius: 14px; background: #0b101a; border: 1px solid var(--line);
+    display: flex; align-items: center; justify-content: center; overflow: hidden;
+  }
+  .motor-pic img { max-width: 100%; max-height: 100%; object-fit: contain; }
+  .motor-pic img.spin-cw  { animation: cw 1s linear infinite; }
+  .motor-pic img.spin-ccw { animation: ccw 1s linear infinite; }
+  @keyframes cw  { to { transform: rotate(360deg); } }
+  @keyframes ccw { to { transform: rotate(-360deg); } }
+
+  .field { margin-bottom: 14px; }
+  .field label { display: block; font-size: 12px; color: var(--dim); margin-bottom: 6px; letter-spacing: .3px; }
+  .field select, .field input[type="range"] { width: 100%; }
+  .field select {
+    padding: 10px 12px; border-radius: 10px; border: 1px solid var(--line);
+    background: #0c121d; color: var(--txt); font-size: 14px; outline: none; font-family: inherit;
+  }
+  .field select:focus { border-color: var(--accent); }
+
+  .range-row { display: flex; align-items: center; gap: 12px; }
+  .range-row .val {
+    min-width: 74px; text-align: center; font-variant-numeric: tabular-nums;
+    padding: 6px 8px; border-radius: 8px; background: #0c121d; border: 1px solid var(--line);
+    font-size: 14px; color: #cfe0ff;
+  }
+  input[type="range"] {
+    -webkit-appearance: none; appearance: none; height: 8px; border-radius: 8px;
+    background: linear-gradient(90deg, var(--accent) 0%, var(--accent) 0%, #26314a 0%);
+    outline: none;
+  }
+  input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none; width: 20px; height: 20px; border-radius: 50%;
+    background: #fff; border: 3px solid var(--accent); cursor: pointer;
+    box-shadow: 0 0 0 4px rgba(59,130,246,.15);
+  }
+  input[type="range"]::-moz-range-thumb {
+    width: 18px; height: 18px; border-radius: 50%; background: #fff;
+    border: 3px solid var(--accent); cursor: pointer;
+  }
+  input[type="range"]:disabled { opacity: .45; cursor: not-allowed; }
+
+  .btn-row { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 4px; }
+
+  /* ---------- 电压 ---------- */
+  .volt-box {
+    display: flex; align-items: baseline; gap: 10px;
+    padding: 14px 16px; border-radius: 12px; background: #0c121d; border: 1px solid var(--line);
+    font-variant-numeric: tabular-nums;
+  }
+  .volt-box .num { font-size: 34px; font-weight: 600; letter-spacing: .5px; color: #9fd0ff; }
+  .volt-box .unit { font-size: 16px; color: var(--dim); }
+  .volt-box .warn-msg { margin-left: auto; font-size: 12px; color: var(--warn); }
+
+  /* ---------- 日志 ---------- */
+  .log-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; gap: 10px; flex-wrap: wrap; }
+  .log-head h2 { font-size: 14px; margin: 0; font-weight: 600; color: var(--dim); }
+  .log-tools { display: flex; gap: 8px; }
+  pre#debugLog {
+    margin: 0; padding: 12px 14px; border-radius: 10px; background: #0a0f18;
+    border: 1px solid var(--line); color: #a8c7ff; font-size: 12.5px; line-height: 1.6;
+    max-height: 260px; overflow: auto; white-space: pre-wrap; word-break: break-all;
+    font-family: Consolas, "Cascadia Mono", monospace;
+  }
+  pre#debugLog .t-send { color: #ffc46b; }
+  pre#debugLog .t-recv { color: #6ee7a8; }
+  pre#debugLog .t-err  { color: #ff8080; }
+  pre#debugLog .t-sys  { color: #7c8db0; }
+  .hint { font-size: 12px; color: var(--dim); margin-top: 10px; line-height: 1.8; }
+  .hint code { background: #0a0f18; border: 1px solid var(--line); padding: 1px 6px; border-radius: 6px; color: #a8c7ff; }
+  .badge { display: inline-block; padding: 1px 7px; border-radius: 6px; font-size: 11px; background: #26314a; color: #9fb4d8; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <!-- 连接栏 -->
+  <div class="card">
+    <h1>MQTT 设备控制台 <small>EMQX WebSocket</small></h1>
+    <div class="conn-row">
+      <input id="serverUrl" type="text" spellcheck="false"
+             placeholder="ws://192.168.1.10:8083/mqtt  或  wss://你的域名/mqtt" />
+      <button id="btnConnect">连接</button>
+      <div class="status"><span id="dot" class="dot"></span><span id="statusText">未连接</span></div>
+    </div>
+
+    <!-- 主题 / 认证 / 选项 -->
+    <details class="settings" id="settingsBox">
+      <summary>主题与连接参数（收不到数据先看这里）</summary>
+      <div class="grid4">
+        <div class="fld">
+          <label for="userName">用户名（EMQX 开了认证时必填）</label>
+          <input id="userName" type="text" spellcheck="false" placeholder="留空表示匿名连接" />
+        </div>
+        <div class="fld">
+          <label for="userPass">密码</label>
+          <input id="userPass" type="password" spellcheck="false" placeholder="留空表示无密码" />
+        </div>
+        <div class="fld">
+          <label for="subTopic">订阅主题 · 设备 → 网页</label>
+          <input id="subTopic" type="text" spellcheck="false" value="sensor/data" placeholder="sensor/data 或 sensor/#" />
+          <div class="note">支持通配符 + 和 #；不确定就填 <code>#</code> 收全部主题</div>
+        </div>
+        <div class="fld">
+          <label for="pubTopic">发布主题 · 网页 → 设备</label>
+          <input id="pubTopic" type="text" spellcheck="false" value="motor/ctrl" placeholder="motor/ctrl" />
+          <div class="note">必须和 MCU 端 <code>mqtt.subscribe</code> 的主题一字不差</div>
+        </div>
+        <div class="fld">
+          <label for="qosSel">QoS</label>
+          <select id="qosSel">
+            <option value="0" selected>0（至多一次）</option>
+            <option value="1">1（至少一次）</option>
+          </select>
+        </div>
+        <div class="fld">
+          <label for="clientId">clientId（留空自动生成）</label>
+          <input id="clientId" type="text" spellcheck="false" placeholder="web_console_xxxx" />
+          <div class="note">两个页面用同一个 clientId 会互相顶下线</div>
+        </div>
+      </div>
+    </details>
+
+    <div class="subline">
+      <div>订阅 <b id="subTopicText">-</b></div>
+      <div>发布 <b id="pubTopicText">-</b></div>
+      <div>最后收到数据 <b id="lastUpdate" class="miss">从未收到</b></div>
+      <div>累计收到 <b id="recvCount">0</b> 条</div>
+    </div>
+  </div>
+
+  <!-- 三个灯 + 继电器 -->
+  <div class="card">
+    <div class="grid">
+      <div class="dev" data-dev="led_red">
+        <div class="dev-title">红灯 <span class="state" id="st_led_red">off</span></div>
+        <div class="pic" id="pic_led_red"><img id="img_led_red" src="pic/led_off.jpg" alt="red led" /></div>
+        <div class="sw-row">
+          <span style="font-size:12px;color:var(--dim)">开关</span>
+          <label class="switch">
+            <input type="checkbox" id="sw_led_red" disabled />
+            <span class="slider"></span>
+          </label>
+        </div>
+      </div>
+
+      <div class="dev" data-dev="led_green">
+        <div class="dev-title">绿灯 <span class="state" id="st_led_green">off</span></div>
+        <div class="pic" id="pic_led_green"><img id="img_led_green" src="pic/led_off.jpg" alt="green led" /></div>
+        <div class="sw-row">
+          <span style="font-size:12px;color:var(--dim)">开关</span>
+          <label class="switch">
+            <input type="checkbox" id="sw_led_green" disabled />
+            <span class="slider"></span>
+          </label>
+        </div>
+      </div>
+
+      <div class="dev" data-dev="led_blue">
+        <div class="dev-title">蓝灯 <span class="state" id="st_led_blue">off</span></div>
+        <div class="pic" id="pic_led_blue"><img id="img_led_blue" src="pic/led_off.jpg" alt="blue led" /></div>
+        <div class="sw-row">
+          <span style="font-size:12px;color:var(--dim)">开关</span>
+          <label class="switch">
+            <input type="checkbox" id="sw_led_blue" disabled />
+            <span class="slider"></span>
+          </label>
+        </div>
+      </div>
+
+      <div class="dev" data-dev="relay">
+        <div class="dev-title">继电器 <span class="state" id="st_relay">off</span></div>
+        <div class="pic" id="pic_relay"><img id="img_relay" src="pic/relay_off.jpg" alt="relay" /></div>
+        <div class="sw-row">
+          <span style="font-size:12px;color:var(--dim)">开关</span>
+          <label class="switch">
+            <input type="checkbox" id="sw_relay" disabled />
+            <span class="slider"></span>
+          </label>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 电机 + 电压 -->
+  <div class="card">
+    <div class="motor">
+      <div class="motor-pic"><img id="img_motor" src="pic/motor.jpg" alt="motor" /></div>
+      <div>
+        <div class="field">
+          <label for="selMotor">电机状态</label>
+          <select id="selMotor" disabled>
+            <option value="standby">standby（待机）</option>
+            <option value="forward">forward（正转）</option>
+            <option value="backward">backward（反转）</option>
+            <option value="pause">pause（暂停）</option>
+          </select>
+        </div>
+
+        <div class="field">
+          <label for="rngSpeed">电机速度（0 ~ 100）</label>
+          <div class="range-row">
+            <input id="rngSpeed" type="range" min="0" max="100" step="1" value="0" disabled />
+            <div class="val"><span id="speedVal">0</span></div>
+          </div>
+        </div>
+
+        <div class="field">
+          <label>电压 V</label>
+          <div class="volt-box">
+            <span class="num" id="voltVal">--</span>
+            <span class="unit">V</span>
+            <span class="warn-msg" id="voltWarn"></span>
+          </div>
+        </div>
+
+        <div class="btn-row">
+          <button id="btnSendMotor" disabled class="ghost">下发电机参数</button>
+          <button id="btnStop" class="danger" disabled>急停（pause / 0）</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 调试日志 -->
+  <div class="card">
+    <div class="log-head">
+      <h2>通讯日志 <span class="badge" id="sendCountBadge">发送 0</span></h2>
+      <div class="log-tools">
+        <button id="btnProbe" class="ghost sm" disabled>探测主题</button>
+        <button id="btnClearLog" class="ghost sm">清空</button>
+      </div>
+    </div>
+    <pre id="debugLog">（等待操作）</pre>
+    <div class="hint">
+      连不上数据的排查顺序：<br />
+      ① 展开上面的「主题与连接参数」，把订阅主题改成 <code>#</code>，看有没有数据进来 → 有数据说明主题名写错了；<br />
+      ② 点「探测主题」，会在常见主题上各发一条测试报文，看 MCU 有没有动作、日志里有没有响应；<br />
+      ③ 如果 MCU 端订阅的是 <code>motor/ctrl</code> 但页面发布到别处，改「发布主题」；<br />
+      ④ EMQX 开了认证（用户名/密码/ACL）时，匿名连接能成功但收不到任何数据，填上用户名密码。
+    </div>
+  </div>
+</div>
+
+<script src="lib/mqtt.min.js"></script>
+<script>
+/* =========================================================
+ *  默认配置（想改默认值在这里改）
+ * ======================================================= */
+const CONFIG = {
+  defaultServer : 'ws://broker.emqx.io:8083/mqtt',
+  subTopic      : 'sensor/data',
+  pubTopic      : 'motor/ctrl',
+  reconnectPeriod: 5000,
+  connectTimeout : 8000,
+  voltMin       : 0,
+  voltMax       : 5.5,
+  keepAlive     : 60
+};
+
+/* 探测主题时依次尝试的候选（只发一次，不会影响设备） */
+const PROBE_TOPICS = ['motor/ctrl', 'sensor/cmd', 'device/cmd', 'control', 'cmd', 'motor', 'esp32/cmd', 'esp8266/cmd'];
+
+const $ = id => document.getElementById(id);
+const el = {
+  serverUrl: $('serverUrl'),
+  userName: $('userName'),
+  userPass: $('userPass'),
+  subTopic: $('subTopic'),
+  pubTopic: $('pubTopic'),
+  qosSel: $('qosSel'),
+  clientId: $('clientId'),
+  settingsBox: $('settingsBox'),
+
+  btnConnect: $('btnConnect'),
+  dot: $('dot'),
+  statusText: $('statusText'),
+  subTopicText: $('subTopicText'),
+  pubTopicText: $('pubTopicText'),
+  lastUpdate: $('lastUpdate'),
+  recvCount: $('recvCount'),
+
+  swRed:   $('sw_led_red'),
+  swGreen: $('sw_led_green'),
+  swBlue:  $('sw_led_blue'),
+  swRelay: $('sw_relay'),
+
+  imgRed:   $('img_led_red'),
+  imgGreen: $('img_led_green'),
+  imgBlue:  $('img_led_blue'),
+  imgRelay: $('img_relay'),
+  picRed:   $('pic_led_red'),
+  picGreen: $('pic_led_green'),
+  picBlue:  $('pic_led_blue'),
+  picRelay: $('pic_relay'),
+
+  stRed:   $('st_led_red'),
+  stGreen: $('st_led_green'),
+  stBlue:  $('st_led_blue'),
+  stRelay: $('st_relay'),
+
+  selMotor:   $('selMotor'),
+  rngSpeed:   $('rngSpeed'),
+  speedVal:   $('speedVal'),
+  imgMotor:   $('img_motor'),
+  voltVal:    $('voltVal'),
+  voltWarn:   $('voltWarn'),
+  btnSendMotor: $('btnSendMotor'),
+  btnStop:    $('btnStop'),
+
+  debugLog: $('debugLog'),
+  btnProbe: $('btnProbe'),
+  btnClearLog: $('btnClearLog'),
+  sendCountBadge: $('sendCountBadge')
+};
+
+const SWITCH_DEVICES = [
+  { key: 'led_red',   sw: el.swRed,   img: el.imgRed,   pic: el.picRed,   st: el.stRed,
+    onImg: 'pic/led_red_on.jpg',   offImg: 'pic/led_off.jpg',   glow: 'rgba(255,60,60,.45)' },
+  { key: 'led_green', sw: el.swGreen, img: el.imgGreen, pic: el.picGreen, st: el.stGreen,
+    onImg: 'pic/led_green_on.jpg', offImg: 'pic/led_off.jpg',   glow: 'rgba(60,255,120,.45)' },
+  { key: 'led_blue',  sw: el.swBlue,  img: el.imgBlue,  pic: el.picBlue,  st: el.stBlue,
+    onImg: 'pic/led_blue_on.jpg',  offImg: 'pic/led_off.jpg',   glow: 'rgba(70,130,255,.5)' },
+  { key: 'relay',     sw: el.swRelay, img: el.imgRelay, pic: el.picRelay, st: el.stRelay,
+    onImg: 'pic/relay_on.jpg',     offImg: 'pic/relay_off.jpg', glow: 'rgba(255,190,70,.4)' }
+];
+
+const state = {
+  client: null,
+  connected: false,
+  connecting: false,
+  topics: { sub: CONFIG.subTopic, pub: CONFIG.pubTopic },
+  qos: 0,
+  recv: 0,
+  sent: 0,
+  device: {
+    led_red: 'off', led_green: 'off', led_blue: 'off', relay: 'off',
+    motor_state: 'standby', motor_speed: 0, vol: null
+  },
+  userTouchedMotor: false
+};
+
+/* =========================================================
+ *  日志
+ * ======================================================= */
+const MAX_LOG = 200;
+const logLines = [];
+function log(kind, text) {
+  const t = new Date().toLocaleTimeString('zh-CN', { hour12: false });
+  const cls = { send: 't-send', recv: 't-recv', err: 't-err', sys: 't-sys' }[kind] || 't-sys';
+  const tag = { send: '发出', recv: '收到', err: '错误', sys: '系统' }[kind] || '系统';
+  logLines.unshift('<span class="' + cls + '">[' + t + '] ' + tag + ' ' + escapeHtml(text) + '</span>');
+  if (logLines.length > MAX_LOG) logLines.pop();
+  el.debugLog.innerHTML = logLines.join('\n');
+}
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+}
+
+/* =========================================================
+ *  服务器地址解析
+ * ======================================================= */
+function parseServerInput(input) {
+  let s = (input || '').trim();
+  if (!s) throw new Error('请输入服务器地址');
+
+  // #sensor=xxx&motor=yyy — 可用 hash 覆盖主题
+  let hashParams = {};
+  const hashIdx = s.indexOf('#');
+  if (hashIdx >= 0) {
+    const hashStr = s.slice(hashIdx + 1);
+    s = s.slice(0, hashIdx);
+    hashStr.split('&').forEach(pair => {
+      const [k, v] = pair.split('=');
+      if (k && v) hashParams[decodeURIComponent(k)] = decodeURIComponent(v);
+    });
+  }
+
+  let proto = '';
+  const m = s.match(/^([a-zA-Z][\w+.-]*):\/\//);
+  if (m) proto = m[1].toLowerCase();
+
+  const map = { 'http': 'ws', 'https': 'wss', 'mqtt': 'ws', 'mqtts': 'wss',
+                'tcp': 'ws', 'ssl': 'wss', 'ws': 'ws', 'wss': 'wss' };
+  if (proto) {
+    const mapped = map[proto];
+    if (!mapped) throw new Error('不支持的协议：' + proto + '（请用 ws:// 或 wss://）');
+    s = mapped + '://' + s.slice(m[0].length);
+  } else {
+    s = (location.protocol === 'https:' ? 'wss://' : 'ws://') + s;
+  }
+
+  try {
+    const u = new URL(s);
+    if (!u.port) u.port = u.protocol === 'wss:' ? '8084' : '8083';
+    if (!u.pathname || u.pathname === '/') u.pathname = '/mqtt';
+    s = u.toString();
+  } catch (e) {
+    throw new Error('服务器地址格式不正确');
+  }
+
+  return { url: s, hashParams };
+}
+
+/* =========================================================
+ *  连接 / 断开
+ * ======================================================= */
+function setConnUI(mode, text) {
+  el.dot.className = 'dot ' + (mode || '');
+  el.statusText.textContent = text;
+}
+
+function setControlsEnabled(enabled) {
+  SWITCH_DEVICES.forEach(d => { d.sw.disabled = !enabled; });
+  el.selMotor.disabled = !enabled;
+  el.rngSpeed.disabled = !enabled;
+  el.btnSendMotor.disabled = !enabled;
+  el.btnStop.disabled = !enabled;
+  el.btnProbe.disabled = !enabled;
+}
+
+function readConfig() {
+  return {
+    sub: (el.subTopic.value || '').trim() || CONFIG.subTopic,
+    pub: (el.pubTopic.value || '').trim() || CONFIG.pubTopic,
+    qos: Number(el.qosSel.value),
+    user: (el.userName.value || '').trim(),
+    pass: el.userPass.value || '',
+    clientId: (el.clientId.value || '').trim()
+  };
+}
+
+function persistConfig() {
+  try {
+    localStorage.setItem('mqtt_console_cfg', JSON.stringify({
+      server: el.serverUrl.value,
+      sub: el.subTopic.value,
+      pub: el.pubTopic.value,
+      qos: el.qosSel.value,
+      user: el.userName.value,
+      clientId: el.clientId.value
+    }));
+  } catch (e) {}
+}
+
+function connect() {
+  if (state.connecting || state.connected) return;
+
+  let cfg;
+  try {
+    cfg = parseServerInput(el.serverUrl.value);
+  } catch (e) {
+    setConnUI('err', e.message);
+    log('err', e.message);
+    el.settingsBox.open = true;
+    return;
+  }
+
+  const ui = readConfig();
+  const sub = cfg.hashParams.sensor || ui.sub;
+  const pub = cfg.hashParams.motor || ui.pub;
+
+  state.topics = { sub, pub };
+  state.qos = ui.qos;
+  el.subTopicText.textContent = sub + ' (QoS ' + ui.qos + ')';
+  el.pubTopicText.textContent = pub + ' (QoS ' + ui.qos + ')';
+  persistConfig();
+
+  state.connecting = true;
+  el.btnConnect.disabled = true;
+  el.serverUrl.disabled = true;
+  setConnUI('wait', '正在连接 ...');
+  log('sys', '连接 ' + cfg.url);
+
+  const options = {
+    clean: true,
+    connectTimeout: CONFIG.connectTimeout,
+    reconnectPeriod: CONFIG.reconnectPeriod,
+    keepalive: CONFIG.keepAlive,
+    clientId: ui.clientId || ('web_' + Math.random().toString(16).slice(2, 10)),
+    protocolVersion: 4
+  };
+  if (ui.user) {
+    options.username = ui.user;
+    options.password = ui.pass;
+    log('sys', '使用用户名认证：' + ui.user);
+  } else {
+    log('sys', '匿名连接（若 EMQX 开了认证，能连上但收不到数据 → 请填用户名密码）');
+  }
+
+  let client;
+  try {
+    client = mqtt.connect(cfg.url, options);
+  } catch (e) {
+    state.connecting = false;
+    el.btnConnect.disabled = false;
+    el.serverUrl.disabled = false;
+    setConnUI('err', '连接失败：' + e.message);
+    log('err', '连接失败：' + e.message);
+    return;
+  }
+  state.client = client;
+
+  client.on('connect', ack => {
+    state.connecting = false;
+    state.connected = true;
+    el.btnConnect.disabled = false;
+    el.btnConnect.textContent = '断开';
+    el.btnConnect.classList.add('danger');
+    el.serverUrl.disabled = true;
+    setControlsEnabled(true);
+    setConnUI('on', '已连接');
+    log('sys', 'CONNACK 连接成功，clientId=' + options.clientId + '，sessionPresent=' + (ack && ack.sessionPresent));
+
+    client.subscribe(sub, { qos: ui.qos }, (err, granted) => {
+      if (err) {
+        setConnUI('err', '订阅失败');
+        log('err', '订阅失败：' + err.message);
+        el.settingsBox.open = true;
+      } else {
+        const g = (granted && granted[0]) || {};
+        if (g.qos === 128) {
+          log('err', '订阅被拒绝（granted qos=128）→ EMQX 的 ACL/授权不允许订阅 ' + sub);
+          setConnUI('err', '订阅被拒绝：' + sub);
+        } else {
+          log('sys', '订阅成功：' + sub + '（granted qos=' + g.qos + '）');
+          setConnUI('on', '已连接 · 订阅 ' + sub);
+        }
+      }
+    });
+  });
+
+  client.on('message', (topic, payload) => {
+    const text = payload.toString('utf8');
+    state.recv++;
+    el.recvCount.textContent = state.recv;
+    el.lastUpdate.textContent = new Date().toLocaleTimeString('zh-CN', { hour12: false });
+    el.lastUpdate.classList.remove('miss');
+    log('recv', '[' + topic + '] ' + text);
+    handlePayload(topic, text);
+  });
+
+  client.on('error', err => {
+    const msg = (err && err.message) ? err.message : String(err);
+    setConnUI('err', '错误：' + msg);
+    log('err', msg);
+    // 认证/授权类错误时自动展开设置面板
+    if (/auth|denied|not authorized|bad user|bad pass/i.test(msg)) {
+      el.settingsBox.open = true;
+    }
+  });
+  client.on('reconnect', () => { setConnUI('wait', '正在重连 ...'); log('sys', '重连中 ...'); });
+  client.on('close', () => {
+    if (state.connected) { setConnUI('wait', '连接已断开'); log('sys', '连接已断开'); }
+    state.connected = false;
+    setControlsEnabled(false);
+  });
+  client.on('offline', () => { setConnUI('wait', '离线'); log('sys', '离线'); });
+
+  setTimeout(() => {
+    if (state.connecting) {
+      state.connecting = false;
+      el.btnConnect.disabled = false;
+      setConnUI('err', '连接超时（后台继续重试）');
+      log('err', '连接超时，检查地址/端口/路径，例如 ws://IP:8083/mqtt');
+    }
+  }, CONFIG.connectTimeout + 2000);
+}
+
+function disconnect() {
+  const c = state.client;
+  if (!c) return;
+  state.client = null;
+  state.connected = false;
+  state.connecting = false;
+  try { c.end(true); } catch (e) {}
+  log('sys', '已主动断开');
+
+  el.btnConnect.textContent = '连接';
+  el.btnConnect.classList.remove('danger');
+  el.btnConnect.disabled = false;
+  el.serverUrl.disabled = false;
+  setControlsEnabled(false);
+  setConnUI('', '未连接');
+}
+
+el.btnConnect.addEventListener('click', () => {
+  if (state.connected || state.connecting) disconnect();
+  else connect();
+});
+el.serverUrl.addEventListener('keydown', e => { if (e.key === 'Enter') el.btnConnect.click(); });
+
+/* =========================================================
+ *  发布
+ * ======================================================= */
+function publish(obj, topicOverride) {
+  if (!state.connected || !state.client) {
+    setConnUI('err', '未连接，指令未发送');
+    log('err', '未连接，指令未发送：' + JSON.stringify(obj));
+    return false;
+  }
+  const topic = topicOverride || state.topics.pub;
+  const msg = JSON.stringify(obj);
+  state.client.publish(topic, msg, { qos: state.qos, retain: false }, err => {
+    if (err) log('err', '发送失败 [' + topic + '] ' + err.message);
+  });
+  state.sent++;
+  el.sendCountBadge.textContent = '发送 ' + state.sent;
+  log('send', '[' + topic + '] ' + msg);
+  return true;
+}
+
+/* =========================================================
+ *  接收 & 渲染
+ * ======================================================= */
+function handlePayload(topic, text) {
+  let data;
+  try { data = JSON.parse(text); } catch (e) {
+    log('sys', '（非 JSON，已忽略渲染）');
+    return;
+  }
+  if (!data || typeof data !== 'object') return;
+  applyDeviceData(data);
+}
+
+function applyDeviceData(data) {
+  SWITCH_DEVICES.forEach(d => {
+    if (data[d.key] !== undefined) {
+      const v = normalizeOnOff(data[d.key]);
+      if (v !== null) state.device[d.key] = v;
+    }
+  });
+
+  if (data.motor_state !== undefined) {
+    const ms = String(data.motor_state).toLowerCase();
+    if (['standby', 'forward', 'backward', 'pause'].includes(ms)) state.device.motor_state = ms;
+  }
+
+  if (data.motor_speed !== undefined) {
+    const sp = clampSpeed(Number(data.motor_speed));
+    if (!Number.isNaN(sp)) state.device.motor_speed = sp;
+  }
+
+  if (data.vol !== undefined) {
+    const v = Number(data.vol);
+    if (!Number.isNaN(v)) state.device.vol = v;
+  }
+
+  render();
+}
+
+function normalizeOnOff(v) {
+  if (typeof v === 'boolean') return v ? 'on' : 'off';
+  const s = String(v).trim().toLowerCase();
+  if (s === 'on' || s === '1' || s === 'true') return 'on';
+  if (s === 'off' || s === '0' || s === 'false') return 'off';
+  return null;
+}
+function clampSpeed(n) {
+  if (Number.isNaN(n)) return NaN;
+  return Math.max(0, Math.min(100, Math.round(n)));
+}
+
+function render() {
+  SWITCH_DEVICES.forEach(d => {
+    const isOn = state.device[d.key] === 'on';
+    d.sw.checked = isOn;
+    const src = isOn ? d.onImg : d.offImg;
+    if (d.img.getAttribute('src') !== src) d.img.src = src;
+    d.st.textContent = isOn ? 'on' : 'off';
+    d.st.className = 'state ' + (isOn ? 'on' : 'off');
+    d.pic.classList.toggle('on-glow', isOn);
+    d.pic.style.setProperty('--glow', d.glow);
+    d.pic.classList.toggle('off-img', !isOn);
+  });
+
+  if (!state.userTouchedMotor) {
+    el.selMotor.value = state.device.motor_state;
+    el.rngSpeed.value = state.device.motor_speed;
+  }
+  updateSpeedUI(Number(el.rngSpeed.value));
+
+  const ms = state.device.motor_state;
+  el.imgMotor.classList.remove('spin-cw', 'spin-ccw');
+  if (ms === 'forward') el.imgMotor.classList.add('spin-cw');
+  else if (ms === 'backward') el.imgMotor.classList.add('spin-ccw');
+
+  if (state.device.vol === null || state.device.vol === undefined) {
+    el.voltVal.textContent = '--';
+    el.voltWarn.textContent = '';
+  } else {
+    const v = state.device.vol;
+    el.voltVal.textContent = v.toFixed(2);
+    el.voltWarn.textContent = (v < CONFIG.voltMin || v > CONFIG.voltMax)
+      ? '超出 ' + CONFIG.voltMin + ' ~ ' + CONFIG.voltMax + ' V' : '';
+  }
+}
+
+function updateSpeedUI(val) {
+  el.speedVal.textContent = val + '%';
+  el.rngSpeed.style.background =
+    'linear-gradient(90deg, var(--accent) 0%, var(--accent) ' + val + '%, #26314a ' + val + '%, #26314a 100%)';
+}
+
+/* =========================================================
+ *  交互
+ * ======================================================= */
+SWITCH_DEVICES.forEach(d => {
+  d.sw.addEventListener('change', () => {
+    const v = d.sw.checked ? 'on' : 'off';
+    state.device[d.key] = v;
+    render();
+    publish({ [d.key]: v });
+  });
+});
+
+el.selMotor.addEventListener('change', () => {
+  state.userTouchedMotor = true;
+  state.device.motor_state = el.selMotor.value;
+  state.device.motor_speed = clampSpeed(Number(el.rngSpeed.value));
+});
+el.rngSpeed.addEventListener('input', () => {
+  state.userTouchedMotor = true;
+  state.device.motor_speed = clampSpeed(Number(el.rngSpeed.value));
+  updateSpeedUI(state.device.motor_speed);
+});
+el.rngSpeed.addEventListener('change', () => sendMotor());
+
+function sendMotor() {
+  const payload = {
+    motor_state: el.selMotor.value,
+    motor_speed: clampSpeed(Number(el.rngSpeed.value))
+  };
+  publish(payload);
+  state.userTouchedMotor = false;
+}
+el.btnSendMotor.addEventListener('click', sendMotor);
+
+el.btnStop.addEventListener('click', () => {
+  el.selMotor.value = 'pause';
+  el.rngSpeed.value = 0;
+  updateSpeedUI(0);
+  state.device.motor_state = 'pause';
+  state.device.motor_speed = 0;
+  state.userTouchedMotor = false;
+  render();
+  publish({ motor_state: 'pause', motor_speed: 0 });
+});
+
+/* 探测：向多个常见主题各发一条无害的查询报文，看哪个有回 */
+el.btnProbe.addEventListener('click', () => {
+  log('sys', '开始探测：向 ' + PROBE_TOPICS.length + ' 个候选主题发送 {"probe":1}');
+  ['#'].forEach(t => log('sys', '顺带确认：订阅 ' + t + ' 可以看到所有主题流量'));
+  PROBE_TOPICS.forEach((t, i) => {
+    setTimeout(() => publish({ probe: 1 }, t), i * 250);
+  });
+  setTimeout(() => log('sys', '探测完成：若某个主题有 MCU 响应，就把「发布主题」改成它'), PROBE_TOPICS.length * 250 + 500);
+});
+
+el.btnClearLog.addEventListener('click', () => {
+  logLines.length = 0;
+  el.debugLog.textContent = '（已清空）';
+});
+
+window.addEventListener('beforeunload', () => {
+  if (state.client) { try { state.client.end(true); } catch (e) {} }
+});
+
+/* =========================================================
+ *  初始化
+ * ======================================================= */
+(function init() {
+  el.serverUrl.value = CONFIG.defaultServer;
+  el.subTopic.value = CONFIG.subTopic;
+  el.pubTopic.value = CONFIG.pubTopic;
+
+  // 恢复上次配置
+  let saved = null;
+  try { saved = JSON.parse(localStorage.getItem('mqtt_console_cfg') || 'null'); } catch (e) {}
+  if (saved) {
+    if (saved.server) el.serverUrl.value = saved.server;
+    if (saved.sub) el.subTopic.value = saved.sub;
+    if (saved.pub) el.pubTopic.value = saved.pub;
+    if (saved.qos !== undefined) el.qosSel.value = saved.qos;
+    if (saved.user) el.userName.value = saved.user;
+    if (saved.clientId) el.clientId.value = saved.clientId;
+  }
+
+  // 地址栏 ?server=&sub=&pub=&auto=1
+  const qs = new URLSearchParams(location.search);
+  if (qs.get('server')) el.serverUrl.value = qs.get('server');
+  if (qs.get('sub')) el.subTopic.value = qs.get('sub');
+  if (qs.get('pub')) el.pubTopic.value = qs.get('pub');
+
+  el.subTopicText.textContent = el.subTopic.value;
+  el.pubTopicText.textContent = el.pubTopic.value;
+
+  setControlsEnabled(false);
+  render();
+  log('sys', '页面就绪。收不到数据时：① 订阅主题改成 # 试探 ② 检查发布/订阅主题是否与 MCU 一致 ③ 检查 EMQX 是否开了认证');
+
+  if (qs.get('auto') === '1') connect();
+})();
+</script>
+</body>
+</html>
